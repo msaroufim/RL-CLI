@@ -1,14 +1,16 @@
+# Based on:
+# https://github.com/openai/baselines/blob/master/baselines/deepq/experiments/train_cartpole.py
+# https://github.com/openai/retro/blob/master/examples/random_agent.py
+
 import argparse
 import retro
-
-#figure out the full list of supported algorithms
 from baselines import deepq
 
 
 parser = argparse.ArgumentParser()
 parser.add_argument('game', help='the name or path for the game to run')
 parser.add_argument('state', nargs='?', help='the initial state file to load, minus the extension')
-parser.add_argument('algorithm', help='the name of the reinforcement learning trainer')
+#parser.add_argument('algorithm', help='the name of the reinforcement learning trainer')
 parser.add_argument('--scenario', '-s', default='scenario', help='the scenario file to load, minus the extension')
 parser.add_argument('--record', '-r', action='store_true', help='record bk2 movies')
 parser.add_argument('--verbose', '-v', action='count', default=1, help='increase verbosity (can be specified multiple times)')
@@ -18,6 +20,7 @@ args = parser.parse_args()
 env = retro.make(args.game, args.state or retro.STATE_DEFAULT, scenario=args.scenario, record=args.record)
 verbosity = args.verbose - args.quiet
 
+# if training proceeds slowly then try varying parameters here
 act = deepq.learn(
     env,
     q_func=model,
@@ -30,45 +33,23 @@ act = deepq.learn(
     callback=callback
 )
 
-output = "{0} {1} {2}.pkl".format(args.game + args.state + args.algorithm)
+def callback(lcl, _glb):
+    # stop training if reward exceeds 1000000
+    is_solved = lcl['t'] > 100 and sum(lcl['episode_rewards'][-101:-1]) / 100 >= 1000000
+    return is_solved
 
-print(output)
-act.save(output)
+output_string = "Saving model to {0} {1}".format(args.game, args.state)
 
+print("Saving model to {0} {1}".format(args.game, args.state))
+act.save("Saving model to {0} {1}".format(args.game, args.state))
 
-try:
-    while True:
-        ob = env.reset()
-        t = 0
-        totrew = 0
-        while True:
-            ac = env.action_space.sample()
-            ob, rew, done, info = env.step(ac)
-            t += 1
-            if t % 10 == 0:
-                if verbosity > 1:
-                    infostr = ''
-                    if info:
-                        infostr = ', info: ' + ', '.join(['%s=%i' % (k, v) for k, v in info.items()])
-                    print(('t=%i' % t) + infostr)
-                env.render()
-            totrew += rew
-            if verbosity > 0:
-                if rew > 0:
-                    print('t=%i got reward: %d, current reward: %d' % (t, rew, totrew))
-                if rew < 0:
-                    print('t=%i got penalty: %d, current reward: %d' % (t, rew, totrew))
-            if done:
-                env.render()
-                try:
-                    if verbosity >= 0:
-                        print("done! total reward: time=%i, reward=%d" % (t, totrew))
-                        input("press enter to continue")
-                        print()
-                    else:
-                        input("")
-                except EOFError:
-                    exit(0)
-                break
-except KeyboardInterrupt:
-    exit(0)
+act = deepq.load("cartpole_model.pkl")
+
+while True:
+    obs, done = env.reset(), False
+    episode_rew = 0
+    while not done:
+        env.render()
+        obs, rew, done, _ = env.step(act(obs[None])[0])
+        episode_rew += rew
+    print("Episode reward", episode_rew)
